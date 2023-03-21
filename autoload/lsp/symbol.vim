@@ -9,6 +9,7 @@ vim9script
 import './options.vim' as opt
 import './util.vim'
 import './outline.vim'
+import './fzf.vim'
 
 # Handle keys pressed when the workspace symbol popup menu is displayed
 def FilterSymbols(lspserver: dict<any>, popupID: number, key: string): bool
@@ -353,6 +354,12 @@ export def ShowLocations(lspserver: dict<any>, locations: list<dict<any>>,
                          peekSymbol: bool, title: string)
   if peekSymbol
     PeekLocations(lspserver, locations, title)
+    return
+  endif
+
+  # use fzf (TODO)
+  if opt.lspOptions.useFzf
+    fzf.ShowLocationsByFzf(lspserver, locations, title)
     return
   endif
 

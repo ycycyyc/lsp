@@ -3,6 +3,8 @@ vim9script
 # LSP plugin options
 # User can override these by calling the OptionsSet() function.
 export var lspOptions: dict<any> = {
+  # use fzf to show localtion list
+  seFzf: true,
   # In insert mode, complete the current symbol automatically
   # Otherwise, use omni-completion
   autoComplete: true,
