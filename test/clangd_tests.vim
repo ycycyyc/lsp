@@ -8,7 +8,7 @@ g:LspOptionsSet(lspOpts)
 
 var lspServers = [{
       filetype: ['c', 'cpp'],
-      path: (exepath('clangd-14') ?? exepath('clangd')),
+      path: (exepath('clangd-15') ?? exepath('clangd')),
       args: ['--background-index', '--clang-tidy'],
       initializationOptions: { clangdFileStatus: true },
       customNotificationHandlers: {
@@ -18,7 +18,7 @@ var lspServers = [{
       }
   }]
 call LspAddServer(lspServers)
-echomsg systemlist($'{lspServers[0].path} --version')
+echomsg systemlist($'{shellescape(lspServers[0].path)} --version')
 
 # Test for formatting a file using LspFormat
 def g:Test_LspFormat()
@@ -351,20 +351,21 @@ def g:Test_LspDiag_Multi()
 
   var bnr: number = bufnr()
 
-  setline(1, [
-    'int i = "a";',
-    'int j = i;',
-    'int y = 0;'
-  ])
+  var lines =<< trim END
+    int i = "a";
+    int j = i;
+    int y = 0;
+  END
+  setline(1, lines)
   :redraw!
   # TODO: Waiting count doesn't include Warning, Info, and Hint diags
-  g:WaitForServerFileLoad(2)
+  g:WaitForServerFileLoad(3)
   :LspDiagShow
   var qfl: list<dict<any>> = getloclist(0)
   assert_equal('quickfix', getwinvar(winnr('$'), '&buftype'))
   assert_equal(bnr, qfl[0].bufnr)
   assert_equal(3, qfl->len())
-  assert_equal([1, 5, 'W'], [qfl[0].lnum, qfl[0].col, qfl[0].type])
+  assert_equal([1, 5, 'E'], [qfl[0].lnum, qfl[0].col, qfl[0].type])
   assert_equal([1, 9, 'E'], [qfl[1].lnum, qfl[1].col, qfl[1].type])
   assert_equal([2, 9, 'E'], [qfl[2].lnum, qfl[2].col, qfl[2].type])
   close
@@ -837,25 +838,37 @@ def g:Test_LspGotoSymbol()
   exe "normal! \<C-t>"
   assert_equal([21, 6], [line('.'), col('.')])
 
-  # FIXME: :LspGotoTypeDef and :LspGotoImpl are supported only with clang-14.
-  # This clangd version is not available in Github CI.
+  # :LspGotoTypeDef
+  cursor(21, 2)
+  :LspGotoTypeDef
+  assert_equal([1, 7], [line('.'), col('.')])
+  exe "normal! \<C-t>"
+  assert_equal([21, 2], [line('.'), col('.')])
 
-  # Error cases
+  # :LspGotoImpl
+  cursor(21, 6)
+  :LspGotoImpl
+  assert_equal([12, 11], [line('.'), col('.')])
+  exe "normal! \<C-t>"
+  assert_equal([21, 6], [line('.'), col('.')])
+
   # FIXME: The following tests are failing in Github CI. Comment out for now.
   if 0
+  # Error cases
   :messages clear
   cursor(11, 5)
   :LspGotoDeclaration
   var m = execute('messages')->split("\n")
-  assert_equal('Error: declaration is not found', m[1])
+  assert_equal('Error: symbol declaration is not found', m[1])
   :messages clear
   :LspGotoDefinition
   m = execute('messages')->split("\n")
-  assert_equal('Error: definition is not found', m[1])
+  assert_equal('Error: symbol definition is not found', m[1])
   :messages clear
   :LspGotoImpl
   m = execute('messages')->split("\n")
-  assert_equal('Error: implementation is not found', m[1])
+  assert_equal('Error: symbol implementation is not found', m[1])
+  :messages clear
   endif
 
   # Test for LspPeekDeclaration
@@ -947,20 +960,36 @@ def g:Test_LspHover()
     void f2(void)
     {
       f1(5);
+      char *z = "z";
+      f1(z);
     }
   END
   setline(1, lines)
-  g:WaitForServerFileLoad(0)
+  g:WaitForServerFileLoad(1)
   cursor(8, 4)
-  :LspHover
+  var output = execute(':LspHover')->split("\n")
+  assert_equal([], output)
   var p: list<number> = popup_list()
   assert_equal(1, p->len())
   assert_equal(['function f1', '', '→ int', 'Parameters:', '- int a', '', 'int f1(int a)'], getbufline(winbufnr(p[0]), 1, '$'))
   popup_close(p[0])
   cursor(7, 1)
-  :LspHover
+  output = execute(':LspHover')->split("\n")
+  assert_equal('No hover messages found for current position', output[0])
   assert_equal([], popup_list())
+
+  # Show current diagnostic as to open another popup.
+  # Then we can test that LspHover closes all existing popups
+  cursor(10, 6)
+  :LspDiagCurrent
+  assert_equal(1, popup_list()->len())
+  :LspHover
+  assert_equal(1, popup_list()->len())
+  popup_clear()
+
   :%bw!
+
+
 enddef
 
 # Test for :LspShowSignature

@@ -5,45 +5,53 @@ vim9script
 import './util.vim'
 import './options.vim' as opt
 
-# process the 'textDocument/hover' reply from the LSP server
-# Result: Hover | null
-export def HoverReply(lspserver: dict<any>, hoverResult: any): void
+# Util used to compute the hoverText from textDocument/hover reply
+def GetHoverText(lspserver: dict<any>, hoverResult: any): list<any>
   if hoverResult->empty()
-    return
+    return ['', '']
   endif
 
-  var hoverText: list<string>
-  var hoverKind: string
-
+  # MarkupContent
   if hoverResult.contents->type() == v:t_dict
-    if hoverResult.contents->has_key('kind')
-      # MarkupContent
-      if hoverResult.contents.kind == 'plaintext'
-        hoverText = hoverResult.contents.value->split("\n")
-        hoverKind = 'text'
-      elseif hoverResult.contents.kind == 'markdown'
-        hoverText = hoverResult.contents.value->split("\n")
-        hoverKind = 'lspgfm'
-      else
-        util.ErrMsg($'Error: Unsupported hover contents type ({hoverResult.contents.kind})')
-        return
-      endif
-    elseif hoverResult.contents->has_key('value')
-      # MarkedString
-      hoverText->extend([$'``` {hoverResult.contents.language}'])
-      hoverText->extend(hoverResult.contents.value->split("\n"))
-      hoverText->extend(['```'])
-      hoverKind = 'lspgfm'
-    else
-      util.ErrMsg($'Error: Unsupported hover contents ({hoverResult.contents})')
-      return
+      && hoverResult.contents->has_key('kind')
+    if hoverResult.contents.kind == 'plaintext'
+      return [hoverResult.contents.value->split("\n"), 'text']
     endif
-  elseif hoverResult.contents->type() == v:t_list
-    # interface MarkedString[]
+
+    if hoverResult.contents.kind == 'markdown'
+      return [hoverResult.contents.value->split("\n"), 'lspgfm']
+    endif
+
+    lspserver.errorLog(
+      $'{strftime("%m/%d/%y %T")}: Unsupported hover contents kind ({hoverResult.contents.kind})'
+    )
+    return ['', '']
+  endif
+
+  # MarkedString
+  if hoverResult.contents->type() == v:t_dict
+      && hoverResult.contents->has_key('value')
+    return [
+      [$'``` {hoverResult.contents.language}']
+        + hoverResult.contents.value->split("\n")
+        + ['```'],
+      'lspgfm'
+    ]
+  endif
+
+  # MarkedString
+  if hoverResult.contents->type() == v:t_string
+    return [hoverResult.contents->split("\n"), 'lspgfm']
+  endif
+
+  # interface MarkedString[]
+  if hoverResult.contents->type() == v:t_list
+    var hoverText: list<string> = []
     for e in hoverResult.contents
       if !hoverText->empty()
         hoverText->extend(['- - -'])
       endif
+
       if e->type() == v:t_string
         hoverText->extend(e->split("\n"))
       else
@@ -52,14 +60,24 @@ export def HoverReply(lspserver: dict<any>, hoverResult: any): void
         hoverText->extend(['```'])
       endif
     endfor
-    hoverKind = 'lspgfm'
-  elseif hoverResult.contents->type() == v:t_string
-    if hoverResult.contents->empty()
-      return
-    endif
-    hoverText->extend(hoverResult.contents->split("\n"))
-  else
-    util.ErrMsg($'Error: Unsupported hover contents ({hoverResult.contents})')
+
+    return [hoverText, 'lspgfm']
+  endif
+
+  lspserver.errorLog(
+    $'{strftime("%m/%d/%y %T")}: Unsupported hover reply ({hoverResult})'
+  )
+  return ['', '']
+enddef
+
+# process the 'textDocument/hover' reply from the LSP server
+# Result: Hover | null
+export def HoverReply(lspserver: dict<any>, hoverResult: any): void
+  var [hoverText, hoverKind] = GetHoverText(lspserver, hoverResult)
+
+  # Nothing to show
+  if hoverText->empty()
+    util.WarnMsg($'No hover messages found for current position')
     return
   endif
 
@@ -74,6 +92,7 @@ export def HoverReply(lspserver: dict<any>, hoverResult: any): void
     exe $'setlocal ft={hoverKind}'
     :wincmd p
   else
+    popup_clear()
     var winid = hoverText->popup_atcursor({moved: 'word',
 					   maxwidth: 80,
 					   border: [0, 1, 0, 1],
