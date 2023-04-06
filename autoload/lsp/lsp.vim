@@ -37,6 +37,7 @@ def LspInitOnce()
 
   diag.InitOnce()
   inlayhints.InitOnce()
+  signature.InitOnce()
 
   :set ballooneval balloonevalterm
   lspInitializedOnce = true
@@ -509,9 +510,14 @@ export def AddServer(serverList: list<dict<any>>)
       server.debug = false
     endif
 
+    if !server->has_key('workspaceConfig')
+      server.workspaceConfig = {}
+    endif
+
     var lspserver: dict<any> = lserver.NewLspServer(server.name, server.path,
 						    args, server.syncInit,
 						    initializationOptions,
+						    server.workspaceConfig,
 						    customNotificationHandlers,
 						    server.debug)
 
