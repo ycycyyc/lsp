@@ -20,6 +20,7 @@ import './completion.vim'
 import './hover.vim'
 import './signature.vim'
 import './codeaction.vim'
+import './codelens.vim'
 import './callhierarchy.vim' as callhier
 import './typehierarchy.vim' as typehier
 import './inlayhints.vim'
@@ -46,7 +47,7 @@ enddef
 
 # Start a LSP server
 #
-def StartServer(lspserver: dict<any>): number
+def StartServer(lspserver: dict<any>, bnr: number): number
   if lspserver.running
     util.WarnMsg('LSP server for is already running')
     return 0
@@ -71,7 +72,7 @@ def StartServer(lspserver: dict<any>): number
   lspserver.completionLazyDoc = false
   lspserver.completionTriggerChars = []
   lspserver.signaturePopup = -1
-  lspserver.workspaceFolders = [getcwd()]
+  lspserver.workspaceFolders = [bnr->bufname()->fnamemodify(':p:h')]
 
   var job = cmd->job_start(opts)
   if job->job_status() == 'fail'
@@ -85,7 +86,7 @@ def StartServer(lspserver: dict<any>): number
   lspserver.job = job
   lspserver.running = true
 
-  lspserver.initServer()
+  lspserver.initServer(bnr)
 
   return 0
 enddef
@@ -143,7 +144,7 @@ enddef
 
 # Request: 'initialize'
 # Param: InitializeParams
-def InitServer(lspserver: dict<any>)
+def InitServer(lspserver: dict<any>, bnr: number)
   # interface 'InitializeParams'
   var initparams: dict<any> = {}
   initparams.processId = getpid()
@@ -151,12 +152,23 @@ def InitServer(lspserver: dict<any>)
 	name: 'Vim',
 	version: v:versionlong->string(),
       }
-  var curdir: string = getcwd()
-  initparams.rootPath = curdir
-  initparams.rootUri = util.LspFileToUri(curdir)
+
+  # Compute the rootpath (based on the directory of the buffer)
+  var bufDir = bnr->bufname()->fnamemodify(':p:h')
+  var rootPath = ''
+  var rootSearchFiles = lspserver.rootSearchFiles
+  if !rootSearchFiles->empty()
+    rootPath = util.FindNearestRootDir(bufDir, rootSearchFiles)
+  endif
+  if rootPath == ''
+    rootPath = bufDir
+  endif
+  var rootUri = util.LspFileToUri(rootPath)
+  initparams.rootPath = rootPath
+  initparams.rootUri = rootUri
   initparams.workspaceFolders = [{
-	name: curdir->fnamemodify(':t'),
-	uri: util.LspFileToUri(curdir)
+	name: rootPath->fnamemodify(':t'),
+	uri: rootUri
      }]
   initparams.trace = 'off'
   initparams.capabilities = capabilities.GetClientCaps()
@@ -1154,6 +1166,38 @@ def CodeAction(lspserver: dict<any>, fname_arg: string, line1: number,
   codeaction.ApplyCodeAction(lspserver, reply.result, query)
 enddef
 
+# Request: "textDocument/codeLens"
+# Param: CodeLensParams
+def CodeLens(lspserver: dict<any>, fname: string)
+  # Check whether LSP server supports code lens operation
+  if !lspserver.isCodeLensProvider
+    util.ErrMsg('Error: LSP server does not support code lens operation')
+    return
+  endif
+
+  var params = {textDocument: {uri: util.LspFileToUri(fname)}}
+  var reply = lspserver.rpc('textDocument/codeLens', params)
+  if reply->empty() || reply.result->empty()
+    util.WarnMsg($'Error: No code lens actions found for the current file')
+    return
+  endif
+
+  codelens.ProcessCodeLens(lspserver, reply.result)
+enddef
+
+# Request: "codeLens/resolve"
+# Param: CodeLens
+def ResolveCodeLens(lspserver: dict<any>, codeLens: dict<any>): dict<any>
+  if !lspserver.isCodeLensResolveProvider
+    return {}
+  endif
+  var reply = lspserver.rpc('codeLens/resolve', codeLens)
+  if reply->empty()
+    return {}
+  endif
+  return reply.result
+enddef
+
 # List project-wide symbols matching query string
 # Request: "workspace/symbol"
 # Param: WorkspaceSymbolParams
@@ -1384,6 +1428,7 @@ enddef
 export def NewLspServer(name_arg: string, path_arg: string, args: list<string>,
 			isSync: bool, initializationOptions: any,
 			workspaceConfig: dict<any>,
+			rootSearchFiles: list<any>,
 			customNotificationHandlers: dict<func>,
 			debug_arg: bool): dict<any>
   var lspserver: dict<any> = {
@@ -1400,6 +1445,7 @@ export def NewLspServer(name_arg: string, path_arg: string, args: list<string>,
     nextID: 1,
     caps: {},
     requests: {},
+    rootSearchFiles: rootSearchFiles,
     omniCompletePending: false,
     completionTriggerChars: [],
     signaturePopup: -1,
@@ -1472,6 +1518,8 @@ export def NewLspServer(name_arg: string, path_arg: string, args: list<string>,
     typeHierarchy: function(TypeHiearchy, [lspserver]),
     renameSymbol: function(RenameSymbol, [lspserver]),
     codeAction: function(CodeAction, [lspserver]),
+    codeLens: function(CodeLens, [lspserver]),
+    resolveCodeLens: function(ResolveCodeLens, [lspserver]),
     workspaceQuery: function(WorkspaceQuerySymbols, [lspserver]),
     addWorkspaceFolder: function(AddWorkspaceFolder, [lspserver]),
     removeWorkspaceFolder: function(RemoveWorkspaceFolder, [lspserver]),
