@@ -10,7 +10,7 @@ import './textedit.vim'
 
 # Process various reply messages from the LSP server
 export def ProcessReply(lspserver: dict<any>, req: dict<any>, reply: dict<any>): void
-  util.ErrMsg($'Error: Unsupported reply received from LSP server: {reply->string()} for request: {req->string()}')
+  util.ErrMsg($'Unsupported reply received from LSP server: {reply->string()} for request: {req->string()}')
 enddef
 
 # process a diagnostic notification message from the LSP server
@@ -20,47 +20,54 @@ def ProcessDiagNotif(lspserver: dict<any>, reply: dict<any>): void
   diag.DiagNotification(lspserver, reply.params.uri, reply.params.diagnostics)
 enddef
 
+# Convert LSP message type to a string
+def LspMsgTypeToString(lspMsgType: number): string
+  var msgStrMap: list<string> = ['', 'Error', 'Warning', 'Info', 'Log']
+  var mtype: string = 'Log'
+  if lspMsgType > 0 && lspMsgType < 5
+    mtype = msgStrMap[lspMsgType]
+  endif
+  return mtype
+enddef
+
 # process a show notification message from the LSP server
 # Notification: window/showMessage
 # Param: ShowMessageParams
 def ProcessShowMsgNotif(lspserver: dict<any>, reply: dict<any>)
-  var msgType: list<string> = ['', 'Error: ', 'Warning: ', 'Info: ', 'Log: ']
-  if reply.params.type == 4
+  if reply.params.type >= 4
     # ignore log messages from the LSP server (too chatty)
     # TODO: Add a configuration to control the message level that will be
     # displayed. Also store these messages and provide a command to display
     # them.
     return
   endif
-  var mtype: string = 'Log: '
-  if reply.params.type > 0 && reply.params.type < 5
-    mtype = msgType[reply.params.type]
+  if reply.params.type == 1
+    util.ErrMsg($'Lsp({lspserver.name}) {reply.params.message}')
+  elseif reply.params.type == 2
+    util.WarnMsg($'Lsp({lspserver.name}) {reply.params.message}')
+  elseif reply.params.type == 3
+    util.InfoMsg($'Lsp({lspserver.name}) {reply.params.message}')
   endif
-
-  :echomsg $'Lsp {mtype} {reply.params.message}'
 enddef
 
 # process a log notification message from the LSP server
 # Notification: window/logMessage
 # Param: LogMessageParams
 def ProcessLogMsgNotif(lspserver: dict<any>, reply: dict<any>)
-  var msgType: list<string> = ['', 'Error', 'Warning', 'Info', 'Log']
-  var mtype: string = 'Log'
-  if reply.params.type > 0 && reply.params.type < 5
-    mtype = msgType[reply.params.type]
-  endif
+  var mtype = LspMsgTypeToString(reply.params.type)
+  lspserver.addMessage(mtype, reply.params.message)
+enddef
 
-  lspserver.traceLog($'{strftime("%m/%d/%y %T")}: [{mtype}]: {reply.params.message}')
+# process the log trace notification messages
+# Notification: $/logTrace
+# Param: LogTraceParams
+def ProcessLogTraceNotif(lspserver: dict<any>, reply: dict<any>)
+  lspserver.addMessage('trace', reply.params.message)
 enddef
 
 # process unsupported notification messages
 def ProcessUnsupportedNotif(lspserver: dict<any>, reply: dict<any>)
-  util.ErrMsg($'Error: Unsupported notification message received from the LSP server ({lspserver.path}), message = {reply->string()}')
-enddef
-
-# process log trace notification messages
-def ProcessLogTraceNotif(lspserver: dict<any>, reply: dict<any>)
-  :echomsg $'Log trace notification: {reply->string()}'
+  util.ErrMsg($'Unsupported notification message received from the LSP server ({lspserver.path}), message = {reply->string()}')
 enddef
 
 # per-filetype private map inside to record if ntf once or not
@@ -107,7 +114,7 @@ export def ProcessNotif(lspserver: dict<any>, reply: dict<any>): void
   elseif lspserver.customNotificationHandlers->has_key(reply.method)
     lspserver.customNotificationHandlers[reply.method](lspserver, reply)
   elseif lsp_ignored_notif_handlers->index(reply.method) == -1
-    util.ErrMsg($'Error: Unsupported notification received from LSP server {reply->string()}')
+    util.ErrMsg($'Unsupported notification received from LSP server {reply->string()}')
   endif
 enddef
 
@@ -121,7 +128,7 @@ def ProcessApplyEditReq(lspserver: dict<any>, request: dict<any>)
   endif
   var workspaceEditParams: dict<any> = request.params
   if workspaceEditParams->has_key('label')
-    :echomsg $'Workspace edit {workspaceEditParams.label}'
+    util.InfoMsg($'Workspace edit {workspaceEditParams.label}')
   endif
   textedit.ApplyWorkspaceEdit(workspaceEditParams.edit)
   # TODO: Need to return the proper result of the edit operation
@@ -176,7 +183,7 @@ def ProcessClientUnregisterCap(lspserver: dict<any>, request: dict<any>)
 enddef
 
 def ProcessUnsupportedReq(lspserver: dict<any>, request: dict<any>)
-  util.ErrMsg($'Error: Unsupported request message received from the LSP server ({lspserver.path}), message = {request->string()}')
+  util.ErrMsg($'Unsupported request message received from the LSP server ({lspserver.path}), message = {request->string()}')
 enddef
 
 # process a request message from the server
@@ -196,7 +203,7 @@ export def ProcessRequest(lspserver: dict<any>, request: dict<any>)
   if lspRequestHandlers->has_key(request.method)
     lspRequestHandlers[request.method](lspserver, request)
   else
-    util.ErrMsg($'Error: Unsupported request message received from the LSP server ({lspserver.path}), message = {request->string()}')
+    util.ErrMsg($'Unsupported request message received from the LSP server ({lspserver.path}), message = {request->string()}')
   endif
 enddef
 
@@ -225,7 +232,7 @@ export def ProcessMessages(lspserver: dict<any>): void
 	if msg.error->has_key('data')
 	  emsg ..= $', data = {msg.error.data->string()}'
 	endif
-	util.ErrMsg($'Error(LSP): request {req.method} failed ({emsg})')
+	util.ErrMsg($'request {req.method} failed ({emsg})')
       endif
     endif
   elseif msg->has_key('id') && msg->has_key('method')
@@ -235,7 +242,7 @@ export def ProcessMessages(lspserver: dict<any>): void
     # notification message from the server
     lspserver.processNotif(msg)
   else
-    util.ErrMsg($'Error(LSP): Unsupported message ({msg->string()})')
+    util.ErrMsg($'Unsupported message ({msg->string()})')
   endif
 enddef
 

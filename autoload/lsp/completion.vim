@@ -10,6 +10,34 @@ import './textedit.vim'
 # per-filetype omni-completion enabled/disabled table
 var ftypeOmniCtrlMap: dict<bool> = {}
 
+var defaultKinds: dict<string> = {
+  'Text':           't',
+  'Method':         'm',
+  'Function':       'f',
+  'Constructor':    'C',
+  'Field':          'F',
+  'Variable':       'v',
+  'Class':          'c',
+  'Interface':      'i',
+  'Module':         'M',
+  'Property':       'p',
+  'Unit':           'u',
+  'Value':          'V',
+  'Enum':           'e',
+  'Keyword':        'k',
+  'Snippet':        'S',
+  'Color':          'C',
+  'File':           'f',
+  'Reference':      'r',
+  'Folder':         'F',
+  'EnumMember':     'E',
+  'Constant':       'd',
+  'Struct':         's',
+  'Event':          'E',
+  'Operator':       'o',
+  'TypeParameter':  'T'
+}
+
 # Returns true if omni-completion is enabled for filetype 'ftype'.
 # Otherwise, returns false.
 def LspOmniComplEnabled(ftype: string): bool
@@ -23,37 +51,47 @@ enddef
 
 # Map LSP complete item kind to a character
 def LspCompleteItemKindChar(kind: number): string
-  var kindMap: list<string> = ['',
-		't', # Text
-		'm', # Method
-		'f', # Function
-		'C', # Constructor
-		'F', # Field
-		'v', # Variable
-		'c', # Class
-		'i', # Interface
-		'M', # Module
-		'p', # Property
-		'u', # Unit
-		'V', # Value
-		'e', # Enum
-		'k', # Keyword
-		'S', # Snippet
-		'C', # Color
-		'f', # File
-		'r', # Reference
-		'F', # Folder
-		'E', # EnumMember
-		'd', # Contant
-		's', # Struct
-		'E', # Event
-		'o', # Operator
-		'T'  # TypeParameter
-	]
+  var kindMap: list<string> = [
+    '',
+    'Text',
+    'Method',
+    'Function',
+    'Constructor',
+    'Field',
+    'Variable',
+    'Class',
+    'Interface',
+    'Module',
+    'Property',
+    'Unit',
+    'Value',
+    'Enum',
+    'Keyword',
+    'Snippet',
+    'Color',
+    'File',
+    'Reference',
+    'Folder',
+    'EnumMember',
+    'Constant',
+    'Struct',
+    'Event',
+    'Operator',
+    'TypeParameter'
+  ]
+
   if kind > 25
     return ''
   endif
-  return kindMap[kind]
+
+  var kindName = kindMap[kind]
+  var kindValue = defaultKinds[kindName]
+
+  if opt.lspOptions.customCompletionKinds && opt.lspOptions.completionKinds->has_key(kindName)
+    kindValue = opt.lspOptions.completionKinds[kindName]
+  endif
+
+  return kindValue
 enddef
 
 # Remove all the snippet placeholders from 'str' and return the value.
@@ -89,7 +127,7 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
     items = cItems
   else
     items = cItems.items
-    lspserver.completeItemsIsIncomplete = cItems.isIncomplete
+    lspserver.completeItemsIsIncomplete = cItems->get('isIncomplete', false)
   endif
 
   # Get the keyword prefix before the current cursor column.
@@ -103,31 +141,29 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
   var start_col = start_idx + 1
 
   if opt.lspOptions.ultisnipsSupport
-      call UltiSnips#SnippetsInCurrentScope(1)
-      for key in matchfuzzy(g:current_ulti_dict_info->keys(), prefix)
-          var item = g:current_ulti_dict_info[key]
-          var parts = split(item.location, ':')
-          var txt = readfile(parts[0])[str2nr(parts[1]) : str2nr(parts[1]) + 20]
-          var restxt = item.description .. "\n\n"
-          for line in txt
-              if line == ""
-                  break
-              else
-                  restxt = restxt .. line .. "\n"
-              endif
-          endfor
-          items->add({
-              label: key,
-              data: {
-                  entryNames: [key],
-              },
-              kind: 15,
-              documentation: restxt,
-          })
+    call UltiSnips#SnippetsInCurrentScope(1)
+    for key in matchfuzzy(g:current_ulti_dict_info->keys(), prefix)
+      var item = g:current_ulti_dict_info[key]
+      var parts = split(item.location, ':')
+      var txt = readfile(parts[0])[str2nr(parts[1]) : str2nr(parts[1]) + 20]
+      var restxt = item.description .. "\n\n"
+      for line in txt
+	if line == "" || line[0 : 6] == "snippet"
+	  break
+	else
+	  restxt = restxt .. line .. "\n"
+	endif
       endfor
+      items->add({
+	label: key,
+	data: {
+	  entryNames: [key],
+	},
+	kind: 15,
+	documentation: restxt,
+      })
+    endfor
   endif
-
-  #writefile([$'chcol = {chcol}, starttext = [{starttext}], prefix = [{prefix}], start_idx = {start_idx}, end_idx = {end_idx}, start_col = {start_col}'], '/tmp/lspcomplete.log', 'a')
 
   var completeItems: list<dict<any>> = []
   for item in items
@@ -138,17 +174,17 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
     if item->has_key('textEdit') && opt.lspOptions.completionMatcher != 'fuzzy'
       var start_charcol: number
       if prefix != ''
-        start_charcol = charidx(starttext, start_idx) + 1
+	start_charcol = charidx(starttext, start_idx) + 1
       else
-        start_charcol = chcol
+	start_charcol = chcol
       endif
       var textEdit = item.textEdit
       var textEditStartCol = textEdit.range.start.character
       if textEditStartCol != start_charcol
-        var offset = start_charcol - textEditStartCol - 1
-        d.word = textEdit.newText[offset : ]
+	var offset = start_charcol - textEditStartCol - 1
+	d.word = textEdit.newText[offset : ]
       else
-        d.word = textEdit.newText
+	d.word = textEdit.newText
       endif
     elseif item->has_key('insertText')
       d.word = item.insertText
@@ -165,25 +201,25 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
 
       # plain text completion
       if prefix != ''
-        # If the completion item text doesn't start with the current (case
-        # ignored) keyword prefix, skip it.
-        if opt.lspOptions.completionMatcher == 'icase'
-          if d.word->tolower()->stridx(prefix) != 0
-            continue
-          endif
-        # If the completion item text doesn't fuzzy match with the current
-        # keyword prefix, skip it.
-        elseif opt.lspOptions.completionMatcher == 'fuzzy'
-          if matchfuzzy([d.word], prefix)->empty()
-            continue
-          endif
-        # If the completion item text doesn't start with the current keyword
-        # prefix, skip it.
-        else
-          if d.word->stridx(prefix) != 0
-            continue
-          endif
-        endif
+	# If the completion item text doesn't start with the current (case
+	# ignored) keyword prefix, skip it.
+	if opt.lspOptions.completionMatcher == 'icase'
+	  if d.word->tolower()->stridx(prefix) != 0
+	    continue
+	  endif
+	# If the completion item text doesn't fuzzy match with the current
+	# keyword prefix, skip it.
+	elseif opt.lspOptions.completionMatcher == 'fuzzy'
+	  if matchfuzzy([d.word], prefix)->empty()
+	    continue
+	  endif
+	# If the completion item text doesn't start with the current keyword
+	# prefix, skip it.
+	else
+	  if d.word->stridx(prefix) != 0
+	    continue
+	  endif
+	endif
       endif
     endif
 
@@ -204,18 +240,18 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
       d.info = 'Lazy doc'
     else
       if item->has_key('detail') && item.detail != ''
-        # Solve a issue where if a server send a detail field
-        # with a "\n", on the menu will be everything joined with
-        # a "^@" separating it. (example: clangd)
-        d.menu = item.detail->split("\n")[0]
+	# Solve a issue where if a server send a detail field
+	# with a "\n", on the menu will be everything joined with
+	# a "^@" separating it. (example: clangd)
+	d.menu = item.detail->split("\n")[0]
       endif
       if item->has_key('documentation')
-        if item.documentation->type() == v:t_string && item.documentation != ''
-          d.info = item.documentation
-        elseif item.documentation->type() == v:t_dict
-            && item.documentation.value->type() == v:t_string
-          d.info = item.documentation.value
-        endif
+	if item.documentation->type() == v:t_string && item.documentation != ''
+	  d.info = item.documentation
+	elseif item.documentation->type() == v:t_dict
+	    && item.documentation.value->type() == v:t_string
+	  d.info = item.documentation.value
+	endif
       endif
     endif
 
@@ -248,9 +284,8 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
   endif
 enddef
 
-# process the 'completionItem/resolve' reply from the LSP server
-# Result: CompletionItem
-export def CompletionResolveReply(lspserver: dict<any>, cItem: any)
+# process the completion documentation
+def ShowCompletionDocumentation(cItem: any)
   if cItem->empty() || cItem->type() != v:t_dict
     return
   endif
@@ -283,19 +318,19 @@ export def CompletionResolveReply(lspserver: dict<any>, cItem: any)
     if cItem.documentation->type() == v:t_dict
       # MarkupContent
       if cItem.documentation.kind == 'plaintext'
-        infoText->extend(cItem.documentation.value->split("\n"))
-        infoKind = 'text'
+	infoText->extend(cItem.documentation.value->split("\n"))
+	infoKind = 'text'
       elseif cItem.documentation.kind == 'markdown'
-        infoText->extend(cItem.documentation.value->split("\n"))
-        infoKind = 'lspgfm'
+	infoText->extend(cItem.documentation.value->split("\n"))
+	infoKind = 'lspgfm'
       else
-        util.ErrMsg($'Error: Unsupported documentation type ({cItem.documentation.kind})')
-        return
+	util.ErrMsg($'Unsupported documentation type ({cItem.documentation.kind})')
+	return
       endif
     elseif cItem.documentation->type() == v:t_string
       infoText->extend(cItem.documentation->split("\n"))
     else
-      util.ErrMsg($'Error: Unsupported documentation ({cItem.documentation->string()})')
+      util.ErrMsg($'Unsupported documentation ({cItem.documentation->string()})')
       return
     endif
   endif
@@ -324,9 +359,15 @@ export def CompletionResolveReply(lspserver: dict<any>, cItem: any)
   endif
 enddef
 
+# process the 'completionItem/resolve' reply from the LSP server
+# Result: CompletionItem
+export def CompletionResolveReply(lspserver: dict<any>, cItem: any)
+  ShowCompletionDocumentation(cItem)
+enddef
+
 # omni complete handler
 def g:LspOmniFunc(findstart: number, base: string): any
-  var lspserver: dict<any> = buf.CurbufGetServerChecked()
+  var lspserver: dict<any> = buf.CurbufGetServerChecked('completion')
   if lspserver->empty()
     return -2
   endif
@@ -385,7 +426,7 @@ enddef
 # Insert mode completion handler. Used when 24x7 completion is enabled
 # (default).
 def LspComplete()
-  var lspserver: dict<any> = buf.CurbufGetServer()
+  var lspserver: dict<any> = buf.CurbufGetServer('completion')
   if lspserver->empty() || !lspserver.running || !lspserver.ready
     return
   endif
@@ -423,14 +464,18 @@ enddef
 
 # Lazy complete documentation handler
 def LspResolve()
-  var lspserver: dict<any> = buf.CurbufGetServerChecked()
+  var lspserver: dict<any> = buf.CurbufGetServerChecked('completion')
   if lspserver->empty()
     return
   endif
 
   var item = v:event.completed_item
   if item->has_key('user_data') && !item.user_data->empty()
-    lspserver.resolveCompletion(item.user_data)
+      if !item.user_data->has_key('documentation')
+	lspserver.resolveCompletion(item.user_data)
+      else
+	ShowCompletionDocumentation(item.user_data)
+      endif
   endif
 enddef
 
@@ -458,7 +503,7 @@ enddef
 
 # complete done handler (LSP server-initiated actions after completion)
 def LspCompleteDone()
-  var lspserver: dict<any> = buf.CurbufGetServerChecked()
+  var lspserver: dict<any> = buf.CurbufGetServerChecked('completion')
   if lspserver->empty()
     return
   endif
@@ -470,6 +515,7 @@ def LspCompleteDone()
   var completionData: any = v:completed_item->get('user_data', '')
   if completionData->type() != v:t_dict
       || !completionData->has_key('additionalTextEdits')
+      || !opt.lspOptions.completionTextEdit
     return
   endif
 
@@ -520,9 +566,9 @@ export def BufferInit(lspserver: dict<any>, bnr: number, ftype: string)
   endif
 
   acmds->add({bufnr: bnr,
-                 event: 'CompleteChanged',
-                 group: 'LSPBufferAutocmds',
-                 cmd: 'LspSetPopupFileType()'})
+	      event: 'CompleteChanged',
+	      group: 'LSPBufferAutocmds',
+	      cmd: 'LspSetPopupFileType()'})
 
   # Execute LSP server initiated text edits after completion
   acmds->add({bufnr: bnr,

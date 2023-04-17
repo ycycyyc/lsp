@@ -218,7 +218,7 @@ def OutlineCleanup()
 enddef
 
 # open the symbol outline window
-export def OpenOutlineWindow()
+export def OpenOutlineWindow(cmdmods: string, winsize: number)
   var wid: number = bufwinid('LSP-Outline')
   if wid != -1
     return
@@ -226,11 +226,21 @@ export def OpenOutlineWindow()
 
   var prevWinID: number = win_getid()
 
-  if opt.lspOptions.outlineOnRight
-    execute $':botright :{opt.lspOptions.outlineWinSize}vnew LSP-Outline'
-  else
-    execute $':topleft :{opt.lspOptions.outlineWinSize}vnew LSP-Outline'
+  var mods = cmdmods
+  if mods == ''
+    if opt.lspOptions.outlineOnRight
+      mods = ':vert :botright'
+    else
+      mods = ':vert :topleft'
+    endif
   endif
+
+  var size = winsize
+  if size == 0
+    size = opt.lspOptions.outlineWinSize
+  endif
+
+  execute $'{mods} :{size}new LSP-Outline'
   :setlocal modifiable
   :setlocal noreadonly
   :silent! :%d _

@@ -94,7 +94,7 @@ def JumpToWorkspaceSymbol(popupID: number, result: number): void
     var fname: string = symTbl[result - 1].file
     var bufnum = fname->bufnr()
     var winList: list<number> = bufnum->win_findbuf()
-    if winList->len() == 0
+    if winList->empty()
       # Not present in any window
       if &modified || &buftype != ''
 	# the current buffer is modified or is not a normal buffer, then open
@@ -217,11 +217,35 @@ enddef
 
 # map the LSP symbol kind number to string
 export def SymbolKindToName(symkind: number): string
-  var symbolMap: list<string> = ['', 'File', 'Module', 'Namespace', 'Package',
-	'Class', 'Method', 'Property', 'Field', 'Constructor', 'Enum',
-	'Interface', 'Function', 'Variable', 'Constant', 'String', 'Number',
-	'Boolean', 'Array', 'Object', 'Key', 'Null', 'EnumMember', 'Struct',
-	'Event', 'Operator', 'TypeParameter']
+  var symbolMap: list<string> = [
+    '',
+    'File',
+    'Module',
+    'Namespace',
+    'Package',
+    'Class',
+    'Method',
+    'Property',
+    'Field',
+    'Constructor',
+    'Enum',
+    'Interface',
+    'Function',
+    'Variable',
+    'Constant',
+    'String',
+    'Number',
+    'Boolean',
+    'Array',
+    'Object',
+    'Key',
+    'Null',
+    'EnumMember',
+    'Struct',
+    'Event',
+    'Operator',
+    'TypeParameter'
+  ]
   if symkind > 26
     return ''
   endif
@@ -561,7 +585,7 @@ enddef
 # process the 'textDocument/documentSymbol' reply from the LSP server
 # Open a symbols window and display the symbols as a tree
 # Result: DocumentSymbol[] | SymbolInformation[] | null
-export def DocSymbolReply(fname: string, lspserver: dict<any>, docsymbol: any)
+export def DocSymbolReply(lspserver: dict<any>, docsymbol: any, fname: string)
   var symbolTypeTable: dict<list<dict<any>>> = {}
   var symbolLineTable: list<dict<any>> = []
 

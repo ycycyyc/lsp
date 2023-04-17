@@ -7,11 +7,10 @@ vim9script
 
 # Language Server Protocol (LSP) plugin for vim
 
-g:loaded_lsp = 1
+g:loaded_lsp = true
 
 import '../autoload/lsp/options.vim'
 import autoload '../autoload/lsp/lsp.vim'
-
 
 # Set LSP plugin options from 'opts'.
 def g:LspOptionsSet(opts: dict<any>)
@@ -44,26 +43,6 @@ def g:LspServerRunning(ftype: string): bool
   return lsp.ServerRunning(ftype)
 enddef
 
-# Command line completion function for the LspSetTrace command.
-def LspServerTraceComplete(arglead: string, cmdline: string, cursorpos: number): list<string>
-  var l = ['off', 'messages', 'verbose']
-  if arglead->empty()
-    return l
-  else
-    return filter(l, (_, val) => val =~ arglead)
-  endif
-enddef
-
-# Command line completion function for the LspSetTrace command.
-def LspServerDebugComplete(arglead: string, cmdline: string, cursorpos: number): list<string>
-  var l = ['errors', 'messages', 'off', 'on']
-  if arglead->empty()
-    return l
-  else
-    return filter(l, (_, val) => val =~ arglead)
-  endif
-enddef
-
 augroup LSPAutoCmds
   au!
   autocmd BufNewFile,BufReadPost * lsp.AddFile(expand('<abuf>')->str2nr())
@@ -90,30 +69,26 @@ command! -nargs=0 -bar LspDiagShow lsp.ShowDiagnostics()
 command! -nargs=0 -bar LspDiagHere lsp.JumpToDiag('here')
 command! -nargs=0 -bar LspFold lsp.FoldDocument()
 command! -nargs=0 -bar -range=% LspFormat lsp.TextDocFormat(<range>, <line1>, <line2>)
-command! -nargs=0 -bar LspGotoDeclaration lsp.GotoDeclaration(v:false, <q-mods>)
-command! -nargs=0 -bar LspGotoDefinition lsp.GotoDefinition(v:false, <q-mods>)
-command! -nargs=0 -bar LspGotoImpl lsp.GotoImplementation(v:false, <q-mods>)
-command! -nargs=0 -bar LspGotoTypeDef lsp.GotoTypedef(v:false, <q-mods>)
-command! -nargs=0 -bar LspHighlight call LspDocHighlight()
+command! -nargs=0 -bar -count LspGotoDeclaration lsp.GotoDeclaration(v:false, <q-mods>, <count>)
+command! -nargs=0 -bar -count LspGotoDefinition lsp.GotoDefinition(v:false, <q-mods>, <count>)
+command! -nargs=0 -bar -count LspGotoImpl lsp.GotoImplementation(v:false, <q-mods>, <count>)
+command! -nargs=0 -bar -count LspGotoTypeDef lsp.GotoTypedef(v:false, <q-mods>, <count>)
+command! -nargs=0 -bar LspHighlight call LspDocHighlight(<q-mods>)
 command! -nargs=0 -bar LspHighlightClear call LspDocHighlightClear()
-command! -nargs=0 -bar LspHover lsp.Hover()
+command! -nargs=0 -bar LspHover lsp.Hover(<q-mods>)
 command! -nargs=0 -bar LspIncomingCalls lsp.IncomingCalls()
 command! -nargs=0 -bar LspOutgoingCalls lsp.OutgoingCalls()
-command! -nargs=0 -bar LspOutline lsp.Outline()
-command! -nargs=0 -bar LspPeekDeclaration lsp.GotoDeclaration(v:true, <q-mods>)
-command! -nargs=0 -bar LspPeekDefinition lsp.GotoDefinition(v:true, <q-mods>)
-command! -nargs=0 -bar LspPeekImpl lsp.GotoImplementation(v:true, <q-mods>)
+command! -nargs=0 -bar -count LspOutline lsp.Outline(<q-mods>, <count>)
+command! -nargs=0 -bar -count LspPeekDeclaration lsp.GotoDeclaration(v:true, <q-mods>, <count>)
+command! -nargs=0 -bar -count LspPeekDefinition lsp.GotoDefinition(v:true, <q-mods>, <count>)
+command! -nargs=0 -bar -count LspPeekImpl lsp.GotoImplementation(v:true, <q-mods>, <count>)
 command! -nargs=0 -bar LspPeekReferences lsp.ShowReferences(v:true)
-command! -nargs=0 -bar LspPeekTypeDef lsp.GotoTypedef(v:true, <q-mods>)
+command! -nargs=0 -bar -count LspPeekTypeDef lsp.GotoTypedef(v:true, <q-mods>, <count>)
 command! -nargs=? -bar LspRename lsp.Rename(<q-args>)
 command! -nargs=0 -bar LspSelectionExpand lsp.SelectionExpand()
 command! -nargs=0 -bar LspSelectionShrink lsp.SelectionShrink()
-command! -nargs=1 -complete=customlist,LspServerDebugComplete -bar LspServerDebug lsp.ServerDebug(<q-args>)
-command! -nargs=0 -bar LspServerRestart lsp.RestartServer()
-command! -nargs=1 -complete=customlist,LspServerTraceComplete -bar LspServerTrace lsp.ServerTraceSet(<q-args>)
+command! -nargs=+ -bar -complete=customlist,lsp.LspServerComplete LspServer lsp.LspServerCmd(<q-args>)
 command! -nargs=0 -bar LspShowReferences lsp.ShowReferences(v:false)
-command! -nargs=0 -bar LspShowServerCapabilities lsp.ShowServerCapabilities()
-command! -nargs=0 -bar LspShowServer lsp.ShowServer()
 command! -nargs=0 -bar LspShowAllServers lsp.ShowAllServers()
 command! -nargs=0 -bar LspShowSignature call LspShowSignature()
 command! -nargs=0 -bar LspSubTypeHierarchy lsp.TypeHierarchy(0)

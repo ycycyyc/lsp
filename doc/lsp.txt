@@ -2,7 +2,7 @@
 
 Author: Yegappan Lakshmanan  (yegappan AT yahoo DOT com)
 For Vim version 9.0 and above
-Last change: April 7, 2023
+Last change: April 11, 2023
 
 ==============================================================================
 						*lsp-license*
@@ -121,18 +121,12 @@ The following commands are provided:
 :LspRename		Rename the current symbol
 :LspSelectionExpand	Expand the current symbol range visual selection
 :LspSelectionShrink	Shrink the current symbol range visual selection
-:LspServerDebug		Enable or disable the language server debug messages.
-:LspServerRestart	Restart the language server for the current buffer.
-:LspServerTrace		Set the language server debug trace value.
+:LspServer		Command to display the status and messages from a
+			language server and to restart the language server.
 :LspShowAllServers	Display the status of all the registered language
 			servers.
 :LspShowReferences	Display the list of references to the keyword under
 			cursor in a new location list.
-:LspShowServerCapabilities
-			Display the language server capabilities for the
-			current buffer.
-:LspShowServer		Display the status of the language server for the
-			current buffer.
 :LspShowSignature	Display the signature of the symbol under cursor.
 :LspSubTypeHierarchy	Display the sub type hierarchy in a popup window.
 :LspSuperTypeHierarchy	Display the super type hierarchy in a popup window.
@@ -244,7 +238,7 @@ To add a language server, the following information is needed:
 						*lsp-cfg-filetype*
 	filetype	One or more file types supported by the language
 			server.  This can be a |String| or a |List|. To specify
-			multiple multiple file types, use a List.
+			multiple file types, use a List.
 						*lsp-cfg-initializationOptions*
 	initializationOptions
 			(Optional) for lsp servers (e.g. intelephense) some
@@ -269,12 +263,32 @@ To add a language server, the following information is needed:
 			searched upwards in all the parent directories.  If
 			multiple directories are found, then the directory
 			closest to the directory of the current buffer is used
-			as the workspace root.  If this parameter is not
-			specified or the files are not found, then the
-			directory of the current buffer is used as the
-			workspace root.
+			as the workspace root.
 
-Aditionally the following configurations can be made:
+			If this parameter is not specified or the files are not
+			found, then the current working directory is used as the
+			workspace root for decendent files, for any other files
+			the parent directory of the file is used.
+
+						*lsp-cfg-runIfSearch*
+	runIfSearch	(Optional) a List of file and directory names used to
+			determinate if a server should run or not. The directory
+			names in "runIfSearch" must end in "/" or "\".  Each
+			file and directory name in "runIfSearch" is searched
+			upwards in all the parent directories.  Exactly like
+			|lsp-cfg-rootSearch|.
+
+			If a file or directory is found then the server will be
+			started, otherwise it will not.
+
+			If this parameter is not specified or is an empty list,
+			then the server will be started unless
+			|lsp-cfg-runUnlessSearch| prevents it.
+
+						*lsp-cfg-runUnlessSearch*
+	runUnlessSearch	(Optional) Opposite of |lsp-cfg-runIfSearch|.
+
+Additionally the following configurations can be made:
 
 					*lsp-cfg-customNotificationHandlers*
 	customNotificationHandlers
@@ -282,7 +296,26 @@ Aditionally the following configurations can be made:
 			typescript-language-server) will send additional
 			notifications which you might want to silence or handle.
 			The provided notification handlers will be called with a
-			reference to the "lspserver" and the "reply".
+			reference to the "lspserver" and the "reply". >
+
+		vim9script
+		g:LspAddServer([{
+			filetype: ['javascript', 'typescript'],
+			path: '/usr/local/bin/typescript-language-server',
+			args: ['--stdio'],
+			customNotificationHandlers: {
+				'$/typescriptVersion': (lspserver, reply) => {
+					echom printf("TypeScript Version = %s",
+						reply.params.version)
+				}
+			}
+		}])
+<
+					*lsp-cfg-features*
+	features
+			(Optional) toggle which features should be enabled for a
+			given language server. See |lsp-multiple-servers| and
+			|lsp-features| for more information.
 						*lsp-cfg-omnicompl*
 	omnicompl	(Optional) a boolean value that enables (true)
 			or disables (false) omni-completion for this file
@@ -359,6 +392,18 @@ completionMatcher	|String| option.  Enable fuzzy or case insensitive
 			    case  - case sensitive matching (default).
 			    fuzzy - fuzzy match completion items.
 			    icase - ignore case when matching items.
+						*lsp-opt-completionTextEdit*
+completionTextEdit	|Boolean| option.  If true, apply the LSP server
+			supplied text edits after a completion.  If a snippet
+			plugin is going to apply the text edits, then set
+			this to false to avoid applying the text edits twice.
+			By default this is set to true.
+                                                *lsp-opt-completionKinds*
+completionKinds		|Dictionary| option. See |lsp-custom-kinds| for all
+                        completion kind names.
+                                                *lsp-opt-customCompletionKinds*
+customCompletionKinds   |Boolean| option.  If you set this to true, you can set
+			custom completion kinds using the option completionKinds.
 						*lsp-opt-diagSignErrorText*
 diagSignErrorText       |String| option. Change diag sign text for errors
                         By default 'E>'
@@ -395,7 +440,8 @@ keepFocusInReferences	|Boolean| option.  Focus on the location list window
 						*lsp-opt-noDiagHoverOnLine*
 noDiagHoverOnLine	|Boolean| option.  Suppress diagnostic hover from
 			appearing when the mouse is over the line instead of
-			the signature.  By default this is set to true.
+			the signature.
+			By default this is set to true.
 						*lsp-opt-noNewlineInCompletion*
 noNewlineInCompletion	|Boolean| option.  Suppress adding a new line on
 			completion selection with <CR>.
@@ -439,7 +485,7 @@ snippetSupport		|Boolean| option.  Enable snippet completion support.
 			Need a snippet completion plugin like vim-vsnip.
 			By default this is set to false.
 						*lsp-opt-ultisnipsSupport*
-ultisnipsSupport		|Boolean| option.  Enable SirVer/ultisnips support.
+ultisnipsSupport	|Boolean| option.  Enable SirVer/ultisnips support.
 			Need a snippet completion plugin SirVer/ultisnips.
 			By default this is set to false.
 						*lsp-opt-usePopupInCodeAction*
@@ -557,19 +603,20 @@ can map these commands to keys and make it easier to invoke them.
 			file using the language server.
 
 						*:LspGotoDeclaration*
-:LspGotoDeclaration	Jumps to the declaration of the symbol under the
+:[count]LspGotoDeclaration
+			Jumps to the declaration of the symbol under the
 			cursor. The behavior of this command is similar to the
 			|:LspGotoDefinition| command.
 
 						*:LspGotoDefinition*
-:LspGotoDefinition	Jumps to the definition of the symbol under the
-			cursor.
+:[count]LspGotoDefinition
+			Jumps to the [count] definition of the symbol under the
+			cursor.  If there are multiple matches and [count] isn't
+			specified, then a location list will be created with the
+			list of locations.
 
-			If there are multiple matches, then a location list will
-			be created with the list of locations.
-
-			If there is only one location then the following will
-			apply:
+			If there is only one location, or [count] is provided
+			then the following will apply:
 
 			If the file is already present in a window, then jumps
 			to that window.  Otherwise, opens the file in a new
@@ -595,11 +642,16 @@ can map these commands to keys and make it easier to invoke them.
 <
 			You may want to map a key to invoke this command: >
 
-			    nnoremap <buffer> gd <Cmd>LspGotoDefinition<CR>
-			    nnoremap <buffer> <C-W>gd <Cmd>topleft LspGotoDefinition<CR>
+	    nnoremap <buffer> gd <Cmd>LspGotoDefinition<CR>
+	    nnoremap <buffer> <C-W>gd <Cmd>topleft LspGotoDefinition<CR>
+<
+			Or if you want to support [count]gd >
+
+	    nnoremap <buffer> gd <Cmd>execute v:count .. 'LspGotoDefinition'<CR>
+	    nnoremap <buffer> <C-W>gd <Cmd>execute 'topleft ' .. v:count .. 'LspGotoDefinition'<CR>
 <
 						*:LspGotoImpl*
-:LspGotoImpl		Jumps to the implementation of the symbol under the
+:[count]LspGotoImpl	Jumps to the implementation of the symbol under the
 			cursor. The behavior of this command is similar to the
 			|:LspGotoDefinition| command. Note that not all the
 			language servers support this feature.
@@ -609,7 +661,7 @@ can map these commands to keys and make it easier to invoke them.
 			    nnoremap <buffer> gi <Cmd>LspGotoImpl<CR>
 <
 						*:LspGotoTypeDef*
-:LspGotoTypeDef		Jumps to the type definition of the symbol under the
+:[count]LspGotoTypeDef	Jumps to the type definition of the symbol under the
 			cursor. The behavior of this command is similar to the
 			|:LspGotoDefinition| command. Note that not all the
 			language servers support this feature.
@@ -634,7 +686,7 @@ can map these commands to keys and make it easier to invoke them.
 			documentation in the preview window instead of in a
 			popup set >
 
-				call LspOptionsSet({'hoverInPreview': v:true})
+			    call LspOptionsSet({'hoverInPreview': v:true})
 <
 			Default is false.
 
@@ -651,7 +703,7 @@ can map these commands to keys and make it easier to invoke them.
 			not all the language servers support this feature.
 
 						*:LspOutline*
-:LspOutline		Opens a vertically split window with the list of
+:[count]LspOutline	Opens a vertically split window with the list of
 			symbols defined in the current file. The current
 			symbol is highlighted. The symbols are grouped by
 			their type. You can select a symbol and press <Enter>
@@ -662,20 +714,54 @@ can map these commands to keys and make it easier to invoke them.
 			the symbols in the new file.  Folds are created in the
 			outline window for the various group of symbols.
 
+			You can use |lsp-opt-outlineOnRight| and
+			|lsp-opt-outlineWinSize| to customize the placement and
+			size of the window.
+
+			This command also supports |:command-modifiers|.  You
+			can use the modifiers specify the position of the
+			window.  Note that the default is ":vert :topleft" or
+			":vert :botright" depending on |lsp-opt-outlineOnRight|
+
+			This command also supports providing a [count] to
+			specify the size of the window.  Note that this
+			overrides the values defined in |lsp-opt-outlineWinSize|
+			Example: >
+
+			    # Open the outline window just above the current window
+			    :aboveleft LspOutline
+
+			    # Open the outline window just next to the current
+			    # window, this is different from the default, when
+			    # you have multiple splits already
+			    :vert aboveleft LspOutline
+
+			    # Same as above, but with a width of 50
+			    :vert aboveleft 50LspOutline
+<
 						*:LspPeekDeclaration*
-:LspPeekDeclaration	Displays the line where the symbol under the
+:[count]LspPeekDeclaration
+			Displays the line where the symbol under the
 			cursor is declared in a popup window. The
 			behavior of this command is similar to the
 			|:LspPeekDefinition| command.
 
 						*:LspPeekDefinition*
-:LspPeekDefinition	Displays the line where the symbol under the cursor is
+:[count]LspPeekDefinition
+			Displays the line where the symbol under the cursor is
 			defined in a popup window. The symbol is highlighted
 			in the popup window. Moving the cursor or pressing
 			<Esc> will close the popup window.
+			When more than one symbol is found all of them will be
+			shown.  The corresponding file for the symbol is
+			displayed in another popup window.  As the selection in
+			the symbol popup menu changes, the file in the popup is
+			updated.
+			When [count] is provided only the [count] symbol will be
+			shown.
 
 						*:LspPeekImpl*
-:LspPeekImpl		Displays the implementation of the symbol under the
+:[count]LspPeekImpl	Displays the implementation of the symbol under the
 			cursor in a popup window. The behavior of this
 			command is similar to the |:LspPeekDefinition|
 			command. Note that not all the language servers
@@ -689,7 +775,7 @@ can map these commands to keys and make it easier to invoke them.
 			the file in the popup is updated.
 
 						*:LspPeekTypeDef*
-:LspPeekTypeDef		Displays the line where the type of the symbol under
+:[count]LspPeekTypeDef	Displays the line where the type of the symbol under
 			the cursor is defined in a popup window. The
 			behavior of this command is similar to the
 			|:LspPeekDefinition| command. Note that not all the
@@ -715,7 +801,7 @@ can map these commands to keys and make it easier to invoke them.
 			It is useful to create a visual map to use this
 			command.  Example: >
 
-			 xnoremap <silent> <Leader>e <Cmd>LspSelectionExpand<CR>
+			xnoremap <silent> <Leader>e <Cmd>LspSelectionExpand<CR>
 <
 			With the above map, you can press "\e" in visual mode
 			successively to expand the current symbol visual
@@ -726,42 +812,77 @@ can map these commands to keys and make it easier to invoke them.
 			is useful to create a visual map to use this command.
 			Example: >
 
-			 xnoremap <silent> <Leader>s <Cmd>LspSelectionShrink<CR>
+			xnoremap <silent> <Leader>s <Cmd>LspSelectionShrink<CR>
 <
 			With the above map, you can press "\s" in visual mode
 			successively to shrink the current symbol visual
 			region.
 
-						*:LspServerDebug*
-:LspServerDebug { on | off | messages | errors }
-			The following arguments are supported:
+						*:LspServer*
+:LspServer { debug | restart | show | trace }
+			Command to display and control the language server for
+			the current buffer.  Each argument has additional
+			sub-commands which are described below.
 
-			errors	Open the log file containing the language
-				server error messages.
-			messages
-				Open the log file containing the language
-				server debug messages.
-			off	Disable the logging of the language server
-				messages.
-			on	Enable the logging of the messages emitted
-				by the language server in the standard output
-				and standard error.
-			By default, the language server messages are not
-			logged.  On a Unix-like system, when enabled, these
-			messages are logged to the /tmp/lsp-<server-name>.log
-			and /tmp/lsp-<server-name>.err file respectively.  On
-			MS-Windows, the %TEMP%/lsp-<server-name>.log and
-			%TEMP%/lsp-<server-name>.err% files are used. See
-			|lsp-debug| for more information.
+			debug { on | off | messages | errors }
+			    Command to enable or disable the language server
+			    debug messages and to display the debug messages
+			    and error messages received from the language
+			    server.  The following sub-commands are supported:
+				errors	Open the log file containing the
+					language server error messages.
+				messages
+					Open the log file containing the
+					language server debug messages.
+				off	Disable the logging of the language
+					server messages.
+				on	Enable the logging of the messages
+					emitted by the language server in the
+					standard output and standard error.
+			    By default, the language server messages are not
+			    logged.  On a Unix-like system, when enabled,
+			    these messages are logged to the
+			    /tmp/lsp-<server-name>.log and
+			    /tmp/lsp-<server-name>.err file respectively.  On
+			    MS-Windows, the %TEMP%/lsp-<server-name>.log and
+			    %TEMP%/lsp-<server-name>.err% files are used. See
+			    |lsp-debug| for more information.
 
-						*:LspServerRestart*
-:LspServerRestart	Restart (stop and then start) the language server for
-			the current buffer. All the loaded buffers with the
-			same filetype as the current buffer are added back to
-			the server.
+			restart
+			    Restart (stop and then start) the language server
+			    for the current buffer. All the loaded buffers
+			    with the same filetype as the current buffer are
+			    added back to the server.
 
-:LspServerTrace { off | messages | verbose }	*:LspServerTrace*
-			Set the language server debug trace value.
+			show {capabilities | initializeRequest | messages
+								| status}
+			    The following sub-commands are supported:
+				capabilities
+					Display the list of language server
+					capabilities for the current buffer.
+					The server capabilities are described
+					in the LSP protocol specification
+					under the "ServerCapabilities"
+					interface.
+				initializeRequest
+					Display the contents of the language
+					server initialization request message
+					(initialize).
+				messages
+					Display the log messages received from
+					the language server.  This includes
+					the messages received using the
+					"window/logMessage" and "$/logTrace"
+					LSP notifications.
+				status
+					Display the language server status for
+					the current buffer.  The output shows
+					the path to the language server
+					executable and the server status.
+
+			trace { off | messages | verbose }
+			    Set the language server debug trace value using
+			    the "$/setTrace" command.
 
 						*:LspShowAllServers*
 :LspShowAllServers	Displays the list of registered language servers and
@@ -780,20 +901,8 @@ can map these commands to keys and make it easier to invoke them.
 			references in a quickfix list instead of in a location
 			list set >
 
-				call LspOptionsSet({'useQuickfixForLocations': v:true})
+			call LspOptionsSet({'useQuickfixForLocations': v:true})
 <
-
-:LspShowServerCapabilities			*:LspShowServerCapabilities*
-			Display the list of language server capabilities for
-			the current buffer.  The server capabilities are
-			described in the LSP protocol specification under the
-			"ServerCapabilities" interface.
-
-						*:LspShowServer*
-:LspShowServer		Displays the language server status for the current
-			buffer.  The output shows the path to the language
-			server executable and the server status.
-
 						*:LspShowSignature*
 :LspShowSignature	Displays the signature of the symbol (e.g. a function
 			or method) before the cursor in a popup.
@@ -804,14 +913,14 @@ can map these commands to keys and make it easier to invoke them.
 			this, you can set the showSignature option to false in
 			your .vimrc file: >
 
-			    call LspOptionsSet({'showSignature': v:false})
+			call LspOptionsSet({'showSignature': v:false})
 <
 			Default is true.
 
 			You can get the function signature echoed in cmdline
 			rather than displayed in popup if you use >
 
-			    call LspOptionsSet({'echoSignature': v:true})
+			call LspOptionsSet({'echoSignature': v:true})
 <
 			Default is false.
 
@@ -1143,12 +1252,12 @@ and received by the plugin from the language server.  The following command
 enables the logging of the messages from the language server for the current
 buffer: >
 
-    :LspServerDebug on
+    :LspServer debug on
 <
 This command also clears the log files.  The following command disables the
 logging of the messages from the language server for the current buffer: >
 
-    :LspServerDebug off
+    :LspServer debug off
 <
 By default, the messages are not logged.  Another method to enable the debug
 is to set the "debug" field to v:true when adding a language server
@@ -1163,18 +1272,18 @@ created in the /tmp directory.  On MS-Windows, these files are created in the
 The following command opens the file containing the messages printed by the
 language server in the stdout: >
 
-    :LspServerDebug messages
+    :LspServer debug messages
 <
 The following command opens the file containing the messages printed by the
 language server in the stderr: >
 
-    :LspServerDebug errors
+    :LspServer debug errors
 <
 To debug language server initialization problems, after enabling the above
 server debug, you can restart the server for the file type in the current
 buffer using the following command: >
 
-    :LspServerRestart
+    :LspServer restart
 <
 The language servers typically support command line options to enable debug
 messages and to increase the verbosity of the messages.  You can refer to the
@@ -1184,7 +1293,7 @@ these options when registering the language server with this plugin.
 If a language server supports the "$/logTrace" LSP notification, then you can
 use the :LspServerTrace command to set the server trace value: >
 
-    :LspServerTrace { off | messages | verbose }
+    :LspServer trace { off | messages | verbose }
 <
 ==============================================================================
 14. Custom Command Handlers			*lsp-custom-commands*
@@ -1211,5 +1320,195 @@ this plugin.
 The callback function should accept a Dict argument.  The Dict argument
 contains the LSP Command interface fields.  Refer to the LSP specification for
 more information about the "Command" interface.
+
+==============================================================================
+15. Custom LSP Completion Kinds			*lsp-custom-kinds*
+
+When a completion popup is triggered, the LSP client will use a default kind
+list to show in the completion "kind" section, to customize it, you need to
+use the option |lsp-opt-customCompletionKinds| and set all custom kinds in the
+option |lsp-opt-completionKinds| . There is a table with all default LSP kinds:
+
+ Kind Name              | Value
+------------------------|--------------------
+ Text                   | t
+ Method                 | m
+ Function               | f
+ Constructor            | C
+ Field                  | F
+ Variable               | v
+ Class                  | c
+ Interface              | i
+ Module                 | M
+ Property               | p
+ Unit                   | u
+ Value                  | V
+ Enum                   | e
+ Keyword                | k
+ Snippet                | S
+ Color                  | C
+ File                   | f
+ Reference              | r
+ Folder                 | F
+ EnumMember             | E
+ Constant               | d
+ Struct                 | s
+ Event                  | E
+ Operator               | o
+ TypeParameter          | T
+
+For example, if you want to change the "Method" kind to the kind "method()": >
+
+	vim9script
+
+	g:LspOptionsSet({
+		customCompletionKinds: true,
+		completionKinds: {
+			"Method": "method()"
+		}
+	})
+<
+In the completion popup, will show something like this: >
+
+	var file = new File()
+
+	file.cre
+		| create                method() |
+		| createIfNotExists     method() |
+		| ...				 |
+<
+==============================================================================
+16. Multiple Language Servers for a buffer	*lsp-multiple-servers*
+
+It's possible to run multiple language servers for a given buffer.
+
+By default the language server defined first will be used for as much as it
+supports, then the next and so on. With the exception that diagnostics from all
+running language servers will be combined.
+
+This means that you can define a language server that only supports a subset of
+features at first and then define the general purpose language server after it:
+>
+	vim9script
+
+	g:LspAddServer([
+		# This language server reports that it only supports
+		# textDocument/documentFormatting, so it will be used
+		# for :LspFormat but nothing else.
+		{
+			filetype: ['html'],
+			path: 'html-pretty-lsp',
+			args: ['--stdio']
+		},
+		# This language server also supports
+		# textDocument/documentFormatting, but since it's been
+		# defined later, the one above will be used instead.
+		# However this server also supports
+		# textDocument/definition, textDocument/declaration,
+		# etc, so it will be used for :LspGotoDefinition,
+		# :LspGotoDeclaration, etc
+		{
+			filetype: ['html'],
+			path: 'html-language-server',
+			args: ['--stdio']
+		}
+	])
+<
+As shown in the example above the order of when the language servers are being
+defined is taken into account for a given method.  However sometimes the
+language server that you want to use for formatting also reports that it
+supports other features. In such a case you can do one of two things:
+
+1. change the order of language servers, and specify that a given language
+server should be used for a given method.
+
+2. set the unwanted features to |v:false| in the features |Dictionary| >
+
+	features: { 'codeAction': v:false }
+<
+For example, if you want to use the efm-langserver for formatting, but the
+typescript-language-server for everything else: >
+
+	vim9script
+
+	g:LspAddServer([
+		# this language server will be used by default, as it's defined
+		# as the first LSP for 'javascript' and 'typescript'
+		{
+			filetype: ['javascript', 'typescript'],
+			path: '/usr/local/bin/typescript-language-server',
+			args: ['--stdio']
+		},
+		# this language server will be used for documentFormatting
+		{
+			filetype: ['efm-langserver'],
+			path: '/usr/local/bin/efm-langserver',
+			args: [],
+			features: {
+				documentFormatting: true
+			}
+		}
+	])
+<
+Another way is to disable the unwanted features: for example if you don't want
+diagnostics from the typescript-language-server, but want to use it for
+everything else: >
+
+	vim9script
+
+	g:LspAddServer([
+		{
+			filetype: ['javascript', 'typescript'],
+			path: '/usr/local/bin/typescript-language-server',
+			args: ['--stdio'],
+			features: {
+				diagnostics: false
+			}
+		},
+	])
+<
+==============================================================================
+17. Language Server Features			*lsp-features*
+
+By providing the configuration |lsp-cfg-features| it's possible to specify which
+servers should be used for a given method.  The following feature flags are
+supported: See |lsp-multiple-servers| for examples.
+
+						*lsp-features-codeAction*
+codeAction			Used by |:LspCodeAction|
+						*lsp-features-codeLens*
+codeLens			Used by |:LspCodeLens|
+						*lsp-features-completion*
+completion			Used by 24/7 Completion and 'omnifunc'
+						*lsp-features-declaration*
+declaration			Used by |:LspGotoDeclaration|, and
+				|:LspPeekDeclaration|
+						*lsp-features-definition*
+definition			Used by |:LspGotoDefinition|, and
+				|:LspPeekDefinition|
+						*lsp-features-diagnostics*
+diagnostics			Used to disable diagnostics for a single
+				language server, by default diagnostics are
+				combined from all running servers, by setting
+				this to |v:false| you can ignore diagnostics
+				from a specific server.
+						*lsp-features-documentFormatting*
+documentFormatting		Used by |:LspFormat|, and 'formatexpr'
+						*lsp-features-documentHighlight*
+documentHighlight		Used by |:LspHighlight|, and |:LspHighlightClear|
+						*lsp-features-foldingRange*
+foldingRange			Used by |:LspFold|
+						*lsp-features-hover*
+hover				Used by |:LspHover|
+						*lsp-features-implementation*
+implementation			Used by |:LspGotoImpl|, and |:LspPeekImpl|
+						*lsp-features-references*
+references			Used by |:LspShowReferences|
+						*lsp-features-rename*
+rename				Used by |:LspRename|
+						*lsp-features-selectionRange*
+selectionRange			Used by |:LspSelectionExpand|, and |:LspSelectionShrink|
+						*lsp-features-typeDefinition*
+typeDefinition			Used by |:LspGotoTypeDef|, and |:LspPeekTypeDef|
 
 vim:tw=78:ts=8:noet:ft=help:norl:

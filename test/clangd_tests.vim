@@ -18,7 +18,11 @@ var lspServers = [{
       }
   }]
 call LspAddServer(lspServers)
-echomsg systemlist($'{shellescape(lspServers[0].path)} --version')
+
+var clangdVerDetail = systemlist($'{shellescape(lspServers[0].path)} --version')
+var clangdVerMajor = clangdVerDetail->matchstr('.*version \d\+\..*')->substitute('.* \(\d\+\)\..*', '\1', 'g')->str2nr()
+echomsg clangdVerDetail
+
 
 # Test for formatting a file using LspFormat
 def g:Test_LspFormat()
@@ -109,8 +113,8 @@ def g:Test_LspFormat()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspFormat')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspFormat')->split("\n")[0])
 
   :%bw!
 enddef
@@ -212,7 +216,7 @@ def g:Test_LspShowReferences()
   var filePopupAttrs = ids[0]->popup_getoptions()
   var refPopupAttrs = ids[1]->popup_getoptions()
   assert_match('Xtest', filePopupAttrs.title)
-  assert_match('References', refPopupAttrs.title)
+  assert_equal('Symbol References', refPopupAttrs.title)
   assert_equal(10, line('.', ids[0]))
   assert_equal(3, line('$', ids[1]))
   feedkeys("jj\<CR>", 'xt')
@@ -227,8 +231,8 @@ def g:Test_LspShowReferences()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspShowReferences')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspShowReferences')->split("\n")[0])
 
   :%bw!
 enddef
@@ -263,7 +267,7 @@ def g:Test_LspDiag()
   g:LspOptionsSet({showDiagInPopup: false})
   normal gg
   var output = execute('LspDiagCurrent')->split("\n")
-  assert_equal('No diagnostic messages found for current line', output[0])
+  assert_equal('Warn: No diagnostic messages found for current line', output[0])
   :LspDiagFirst
   assert_equal([3, 14], [line('.'), col('.')])
   output = execute('LspDiagCurrent')->split("\n")
@@ -276,12 +280,12 @@ def g:Test_LspDiag()
   :LspDiagNext
   assert_equal([7, 2], [line('.'), col('.')])
   output = execute('LspDiagNext')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
   :LspDiagPrev
   :LspDiagPrev
   :LspDiagPrev
   output = execute('LspDiagPrev')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   # :[count]LspDiagNext
   cursor(3, 1)
@@ -290,20 +294,20 @@ def g:Test_LspDiag()
   :2LspDiagNext
   assert_equal([7, 2], [line('.'), col('.')])
   output = execute(':2LspDiagNext')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   # :[count]LspDiagPrev
   cursor(7, 2)
   :4LspDiagPrev
   assert_equal([3, 14], [line('.'), col('.')])
   output = execute(':4LspDiagPrev')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   :%d
   setline(1, ['void blueFunc()', '{', '}'])
   g:WaitForDiags(0)
   output = execute('LspDiagShow')->split("\n")
-  assert_match('No diagnostic messages found for', output[0])
+  assert_match('Warn: No diagnostic messages found for', output[0])
   g:LspOptionsSet({showDiagInPopup: true})
 
   popup_clear()
@@ -359,13 +363,21 @@ def g:Test_LspDiag_Multi()
   setline(1, lines)
   :redraw!
   # TODO: Waiting count doesn't include Warning, Info, and Hint diags
-  g:WaitForServerFileLoad(3)
+  if clangdVerMajor > 14
+	g:WaitForServerFileLoad(3)
+  else
+	g:WaitForServerFileLoad(2)
+  endif
   :LspDiagShow
   var qfl: list<dict<any>> = getloclist(0)
   assert_equal('quickfix', getwinvar(winnr('$'), '&buftype'))
   assert_equal(bnr, qfl[0].bufnr)
   assert_equal(3, qfl->len())
-  assert_equal([1, 5, 'E'], [qfl[0].lnum, qfl[0].col, qfl[0].type])
+  if clangdVerMajor > 14
+	assert_equal([1, 5, 'E'], [qfl[0].lnum, qfl[0].col, qfl[0].type])
+  else
+	assert_equal([1, 5, 'W'], [qfl[0].lnum, qfl[0].col, qfl[0].type])
+  endif
   assert_equal([1, 9, 'E'], [qfl[1].lnum, qfl[1].col, qfl[1].type])
   assert_equal([2, 9, 'E'], [qfl[2].lnum, qfl[2].col, qfl[2].type])
   close
@@ -379,7 +391,7 @@ def g:Test_LspDiag_Multi()
   assert_equal([1, 5], [line('.'), col('.')])
 
   var output = execute('LspDiagPrev')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   cursor(2, 1)
   assert_equal('', execute('LspDiagFirst'))
@@ -410,7 +422,7 @@ def g:Test_LspDiag_Multi()
   # Line without diagnostics
   cursor(3, 1)
   output = execute('LspDiagHere')->split("\n")
-  assert_equal('Error: No more diagnostics found on this line', output[0])
+  assert_equal('Warn: No more diagnostics found on this line', output[0])
 
   g:LspOptionsSet({showDiagInPopup: false})
   for i in range(1, 5)
@@ -430,7 +442,7 @@ def g:Test_LspDiag_Multi()
   for i in range(1, 4)
     cursor(1, i)
     output = execute('LspDiagCurrent!')->split('\n')
-    assert_match('No diagnostic messages found for current position', output[0])
+    assert_equal('Warn: No diagnostic messages found for current position', output[0])
   endfor
 
   cursor(1, 5)
@@ -440,7 +452,7 @@ def g:Test_LspDiag_Multi()
   for i in range(6, 8)
     cursor(1, i)
     output = execute('LspDiagCurrent!')->split('\n')
-    assert_match('No diagnostic messages found for current position', output[0])
+    assert_equal('Warn: No diagnostic messages found for current position', output[0])
   endfor
 
   for i in range(9, 11)
@@ -451,7 +463,7 @@ def g:Test_LspDiag_Multi()
   for i in range(12, 12)
     cursor(1, i)
     output = execute('LspDiagCurrent!')->split('\n')
-    assert_match('No diagnostic messages found for current position', output[0])
+    assert_equal('Warn: No diagnostic messages found for current position', output[0])
   endfor
 
   g:LspOptionsSet({showDiagInPopup: true})
@@ -464,7 +476,7 @@ def g:Test_LspDiag_Multi()
   :2LspDiagNext
   assert_equal([2, 9], [line('.'), col('.')])
   output = execute(':2LspDiagNext')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   cursor(1, 1)
   :99LspDiagNext
@@ -475,14 +487,14 @@ def g:Test_LspDiag_Multi()
   g:LspOptionsSet({showDiagInPopup: false})
   cursor(1, 1)
   :2LspDiagPrev
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
   cursor(3, 3)
   :2LspDiagPrev
   assert_equal([1, 9], [line('.'), col('.')])
   :2LspDiagPrev
   assert_equal([1, 5], [line('.'), col('.')])
   output = execute(':2LspDiagPrev')->split("\n")
-  assert_equal('Error: No more diagnostics found', output[0])
+  assert_equal('Warn: No more diagnostics found', output[0])
 
   cursor(3, 3)
   :99LspDiagPrev
@@ -602,8 +614,8 @@ def g:Test_LspCodeAction()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspCodeAction')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspCodeAction')->split("\n")[0])
 
   :%bw!
 enddef
@@ -672,8 +684,8 @@ def g:Test_LspRename()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspRename')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspRename')->split("\n")[0])
 
   :%bw!
 enddef
@@ -772,8 +784,8 @@ def g:Test_LspSelection()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspSelectionExpand')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspSelectionExpand')->split("\n")[0])
 
   :%bw!
 enddef
@@ -859,15 +871,15 @@ def g:Test_LspGotoSymbol()
   cursor(11, 5)
   :LspGotoDeclaration
   var m = execute('messages')->split("\n")
-  assert_equal('Error: symbol declaration is not found', m[1])
+  assert_equal('symbol declaration is not found', m[1])
   :messages clear
   :LspGotoDefinition
   m = execute('messages')->split("\n")
-  assert_equal('Error: symbol definition is not found', m[1])
+  assert_equal('symbol definition is not found', m[1])
   :messages clear
   :LspGotoImpl
   m = execute('messages')->split("\n")
-  assert_equal('Error: symbol implementation is not found', m[1])
+  assert_equal('symbol implementation is not found', m[1])
   :messages clear
   endif
 
@@ -905,12 +917,12 @@ def g:Test_LspGotoSymbol()
 
   # file without an LSP server
   edit a.raku
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspGotoDefinition')->split("\n"))
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspGotoDeclaration')->split("\n"))
-  assert_equal(['Error: Language server for "raku" file type is not found'],
-	       execute('LspGotoImpl')->split("\n"))
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspGotoDefinition')->split("\n")[0])
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspGotoDeclaration')->split("\n")[0])
+  assert_equal('Error: Language server for "raku" file type is not found',
+	       execute('LspGotoImpl')->split("\n")[0])
 
   :%bw!
 enddef
@@ -924,6 +936,9 @@ def g:Test_LspHighlight()
     {
       int i = arg;
       arg = 2;
+      if (arg == 2) {
+        arg = 3;
+      }
     }
   END
   setline(1, lines)
@@ -944,6 +959,10 @@ def g:Test_LspHighlight()
   assert_equal([], prop_list(1))
   assert_equal([], prop_list(3))
   assert_equal([], prop_list(4))
+
+  cursor(5, 3) # if (arg == 2) {
+  var output = execute('LspHighlight')->split("\n")
+  assert_equal('Warn: No highlight for the current position', output[0])
   :%bw!
 enddef
 
@@ -965,7 +984,11 @@ def g:Test_LspHover()
     }
   END
   setline(1, lines)
-  g:WaitForServerFileLoad(1)
+  if clangdVerMajor > 14
+	g:WaitForServerFileLoad(1)
+  else
+	g:WaitForServerFileLoad(0)
+  endif
   cursor(8, 4)
   var output = execute(':LspHover')->split("\n")
   assert_equal([], output)
@@ -975,7 +998,9 @@ def g:Test_LspHover()
   popup_close(p[0])
   cursor(7, 1)
   output = execute(':LspHover')->split("\n")
-  assert_equal('No hover messages found for current position', output[0])
+  assert_equal('Warn: No hover messages found for current position', output[0])
+  output = execute(':silent LspHover')->split("\n")
+  assert_equal([], output)
   assert_equal([], popup_list())
 
   # Show current diagnostic as to open another popup.
@@ -1068,7 +1093,7 @@ def g:Test_LspSymbolSearch()
   assert_equal([5, 6], [line('.'), col('.')])
 
   var output = execute(':LspSymbolSearch lsptest_nonexist')->split("\n")
-  assert_equal(['Error: Symbol "lsptest_nonexist" is not found'], output)
+  assert_equal('Warn: Symbol "lsptest_nonexist" is not found', output[0])
 
   :%bw!
 enddef
@@ -1120,11 +1145,61 @@ def g:Test_LspOutline()
   END
   setline(1, lines)
   g:WaitForServerFileLoad(0)
+  var winid = win_getid()
   :LspOutline
   assert_equal(2, winnr('$'))
-  var bnum = winbufnr(1)
+  var bnum = winbufnr(winid + 1)
   assert_equal('LSP-Outline', bufname(bnum))
   assert_equal(['Function', '  aFunc', '  bFunc'], getbufline(bnum, 4, '$'))
+
+  # Validate position vert topleft
+  assert_equal(['row', [['leaf', winid + 1], ['leaf', winid]]], winlayout())
+
+  # Validate default width is 20
+  assert_equal(20, winwidth(winid + 1))
+
+  execute $':{bnum}bw'
+
+  # Validate position vert botright
+  g:LspOptionsSet({ outlineOnRight: true })
+  :LspOutline
+  assert_equal(2, winnr('$'))
+  bnum = winbufnr(winid + 2)
+  assert_equal('LSP-Outline', bufname(bnum))
+  assert_equal(['Function', '  aFunc', '  bFunc'], getbufline(bnum, 4, '$'))
+  assert_equal(['row', [['leaf', winid], ['leaf', winid + 2]]], winlayout())
+  g:LspOptionsSet({ outlineOnRight: false })
+  execute $':{bnum}bw'
+
+  # Validate <mods> position botright (below)
+  :botright LspOutline
+  assert_equal(2, winnr('$'))
+  bnum = winbufnr(winid + 3)
+  assert_equal('LSP-Outline', bufname(bnum))
+  assert_equal(['Function', '  aFunc', '  bFunc'], getbufline(bnum, 4, '$'))
+  assert_equal(['col', [['leaf', winid], ['leaf', winid + 3]]], winlayout())
+  execute $':{bnum}bw'
+
+  # Validate that outlineWinSize works for LspOutline
+  g:LspOptionsSet({ outlineWinSize: 40 })
+  :LspOutline
+  assert_equal(2, winnr('$'))
+  bnum = winbufnr(winid + 4)
+  assert_equal('LSP-Outline', bufname(bnum))
+  assert_equal(['Function', '  aFunc', '  bFunc'], getbufline(bnum, 4, '$'))
+  assert_equal(40, winwidth(winid + 4))
+  execute $':{bnum}bw'
+  g:LspOptionsSet({ outlineWinSize: 20 })
+
+  # Validate that <count> works for LspOutline
+  :37LspOutline
+  assert_equal(2, winnr('$'))
+  bnum = winbufnr(winid + 5)
+  assert_equal('LSP-Outline', bufname(bnum))
+  assert_equal(['Function', '  aFunc', '  bFunc'], getbufline(bnum, 4, '$'))
+  assert_equal(37, winwidth(winid + 5))
+  execute $':{bnum}bw'
+
   :%bw!
 enddef
 
@@ -1314,6 +1389,40 @@ def g:Test_OmniComplete_Struct()
   cursor(11, 12)
   feedkeys("cw\<C-X>\<C-O>\<C-N>\<C-N>\<C-Y>", 'xt')
   assert_equal('    pTest->foo = 20;', getline('.'))
+  :bw!
+enddef
+
+# Test for the :LspServer command.
+def g:Test_LspServer()
+  new a.raku
+  assert_equal(['Warn: No Lsp servers found for "a.raku"'],
+	       execute('LspServer debug on')->split("\n"))
+  assert_equal(['Warn: No Lsp servers found for "a.raku"'],
+	       execute('LspServer restart')->split("\n"))
+  assert_equal(['Warn: No Lsp servers found for "a.raku"'],
+	       execute('LspServer show status')->split("\n"))
+  assert_equal(['Warn: No Lsp servers found for "a.raku"'],
+	       execute('LspServer trace verbose')->split("\n"))
+  assert_equal(['Error: LspServer - Unsupported argument "xyz"'],
+	       execute('LspServer xyz')->split("\n"))
+  assert_equal(['Error: Argument required'],
+	       execute('LspServer debug')->split("\n"))
+  assert_equal(['Error: Unsupported argument "xyz"'],
+	       execute('LspServer debug xyz')->split("\n"))
+  assert_equal(['Error: Unsupported argument "on xyz"'],
+	       execute('LspServer debug on xyz')->split("\n"))
+  assert_equal(['Error: Argument required'],
+	       execute('LspServer show')->split("\n"))
+  assert_equal(['Error: Unsupported argument "xyz"'],
+	       execute('LspServer show xyz')->split("\n"))
+  assert_equal(['Error: Unsupported argument "status xyz"'],
+	       execute('LspServer show status xyz')->split("\n"))
+  assert_equal(['Error: Argument required'],
+	       execute('LspServer trace')->split("\n"))
+  assert_equal(['Error: Unsupported argument "xyz"'],
+	       execute('LspServer trace xyz')->split("\n"))
+  assert_equal(['Error: Unsupported argument "verbose xyz"'],
+	       execute('LspServer trace verbose xyz')->split("\n"))
   :bw!
 enddef
 

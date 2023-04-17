@@ -1,16 +1,23 @@
 vim9script
 
+# Display an info message
+export def InfoMsg(msg: string)
+  :echohl Question
+  :echomsg $'Info: {msg}'
+  :echohl None
+enddef
+
 # Display a warning message
 export def WarnMsg(msg: string)
   :echohl WarningMsg
-  :echomsg msg
+  :echomsg $'Warn: {msg}'
   :echohl None
 enddef
 
 # Display an error message
 export def ErrMsg(msg: string)
   :echohl Error
-  :echomsg msg
+  :echomsg $'Error: {msg}'
   :echohl None
 enddef
 
@@ -34,7 +41,7 @@ enddef
 
 # Empty out the LSP server trace logs
 export def ClearTraceLogs(fname: string)
-  writefile([], fname)
+  writefile([], $'{lsp_log_dir}{fname}')
 enddef
 
 # Open the LSP server debug messages file.

@@ -131,6 +131,7 @@ path|complete path to the LSP server executable (without any arguments).
 args|a list of command-line arguments passed to the LSP server. Each argument is a separate List item.
 initializationOptions|User provided initialization options. May be of any type. For example the *intelephense* PHP language server accept several options here with the License Key among others. 
 customNotificationHandlers|A dictionary of notifications and functions that can be specified to add support for custom language server notifications.
+features|A dictionary of booleans that can be specified to toggle what things a given LSP is providing (folding, goto definition, etc) This is useful when running multiple servers in one buffer.
 
 The LSP servers are added using the LspAddServer() function. This function accepts a list of LSP servers with the above information.
 
@@ -187,10 +188,8 @@ Command|Description
 :LspSelectionExpand|Expand the current symbol range visual selection.
 :LspSelectionShrink|Shrink the current symbol range visual selection.
 :LspShowAllServers|Display information about all the registered language servers.
-:LspServerRestart|Restart the language server for the current buffer.
+:LspServer|Display the capabilities or messages or status of the language server for the current buffer or restart the server.
 :LspShowReferences|Display the list of references to the keyword under cursor in a new location list.
-:LspShowServer|Display the language server status for the current buffer.
-:LspShowServerCapabilities|Display the language server capabilities for the current buffer.
 :LspShowSignature|Display the signature of the keyword under cursor.
 :LspSubTypeHierarchy|Display the sub type hierarchy in a popup window.
 :LspSuperTypeHierarchy|Display the super type hierarchy in a popup window.

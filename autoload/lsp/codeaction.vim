@@ -18,7 +18,7 @@ export def DoCommand(lspserver: dict<any>, cmd: dict<any>)
     try
       call CmdHandler(cmd)
     catch
-      util.ErrMsg($'Error: "{cmd.command}" handler raised exception {v:exception}')
+      util.ErrMsg($'"{cmd.command}" handler raised exception {v:exception}')
     endtry
   else
     lspserver.executeCommand(cmd)
@@ -100,24 +100,24 @@ export def ApplyCodeAction(lspserver: dict<any>, actionlist: list<dict<any>>, qu
       wrap: 0,
       title: 'Code action',
       callback: (_, result) => {
-        # Invalid item selected or closed the popup
-        if result <= 0 || result > text->len()
-          return
-        endif
+	# Invalid item selected or closed the popup
+	if result <= 0 || result > text->len()
+	  return
+	endif
 
-        # Do the code action
-        HandleCodeAction(lspserver, actions[result - 1])
+	# Do the code action
+	HandleCodeAction(lspserver, actions[result - 1])
       },
       filter: (winid, key) => {
-        if key == 'h' || key == 'l'
-          winid->popup_close(-1)
-        elseif key->str2nr() > 0
-          # assume less than 10 entries are present
-          winid->popup_close(key->str2nr())
-        else
-          return popup_filter_menu(winid, key)
-        endif
-        return 1
+	if key == 'h' || key == 'l'
+	  winid->popup_close(-1)
+	elseif key->str2nr() > 0
+	  # assume less than 10 entries are present
+	  winid->popup_close(key->str2nr())
+	else
+	  return popup_filter_menu(winid, key)
+	endif
+	return 1
       },
     })
   else

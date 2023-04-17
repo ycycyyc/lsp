@@ -35,6 +35,10 @@ export var lspOptions: dict<any> = {
   ignoreMissingServer: false,
   # Focus on the location list window after LspShowReferences
   keepFocusInReferences: false,
+  # If true, apply the LSP server supplied text edits after a completion.
+  # If a snippet plugin is going to apply the text edits, then set this to
+  # false to avoid applying the text edits twice.
+  completionTextEdit: true,
   # instead of the signature
   noDiagHoverOnLine: true,
   # Suppress adding a new line on completion selection with <CR>
@@ -61,7 +65,11 @@ export var lspOptions: dict<any> = {
   # Use a floating menu to show the code action menu instead of asking for input
   usePopupInCodeAction: false,
   # ShowReferences in a quickfix list instead of a location list`
-  useQuickfixForLocations: false
+  useQuickfixForLocations: false,
+  # Enable support for custom completion kinds
+  customCompletionKinds: false,
+  # A dictionary with all completion kinds that you want to customize
+  completionKinds: {}
 }
 
 # set the LSP plugin options from the user provided option values
