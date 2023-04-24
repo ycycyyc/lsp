@@ -35,7 +35,8 @@ var defaultKinds: dict<string> = {
   'Struct':         's',
   'Event':          'E',
   'Operator':       'o',
-  'TypeParameter':  'T'
+  'TypeParameter':  'T',
+  'Buffer':         'B',
 }
 
 # Returns true if omni-completion is enabled for filetype 'ftype'.
@@ -77,10 +78,11 @@ def LspCompleteItemKindChar(kind: number): string
     'Struct',
     'Event',
     'Operator',
-    'TypeParameter'
+    'TypeParameter',
+    'Buffer'
   ]
 
-  if kind > 25
+  if kind > 26
     return ''
   endif
 
@@ -103,10 +105,56 @@ def MakeValidWord(str_arg: string): string
   if valid->empty()
     return str
   endif
-  if valid =~# ':$'
+  if valid =~ ':$'
     return valid[: -2]
   endif
   return valid
+enddef
+
+# Integration with the UltiSnips plugin
+def CompletionUltiSnips(prefix: string, items: list<dict<any>>)
+  call UltiSnips#SnippetsInCurrentScope(1)
+  for key in matchfuzzy(g:current_ulti_dict_info->keys(), prefix)
+    var item = g:current_ulti_dict_info[key]
+    var parts = split(item.location, ':')
+    var txt = readfile(parts[0])[str2nr(parts[1]) : str2nr(parts[1]) + 20]
+    var restxt = item.description .. "\n\n"
+    for line in txt
+      if line == "" || line[0 : 6] == "snippet"
+	break
+      else
+	restxt = restxt .. line .. "\n"
+      endif
+    endfor
+    items->add({
+      label: key,
+      data: {
+	entryNames: [key],
+      },
+      kind: 15,
+      documentation: restxt,
+    })
+  endfor
+enddef
+
+# add completion from current buf
+def CompletionFromBuffer(items: list<dict<any>>)
+    var words = {}
+    for line in getline(1, '$')
+        for word in line->split('\W\+')
+            if !words->has_key(word) && word->len() > 1
+                words[word] = 1
+                items->add({
+                    label: word,
+                    data: {
+                        entryNames: [word],
+                    },
+                    kind: 26,
+                    documentation: "",
+                })
+            endif
+        endfor
+    endfor
 enddef
 
 # process the 'textDocument/completion' reply from the LSP server
@@ -141,28 +189,11 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
   var start_col = start_idx + 1
 
   if opt.lspOptions.ultisnipsSupport
-    call UltiSnips#SnippetsInCurrentScope(1)
-    for key in matchfuzzy(g:current_ulti_dict_info->keys(), prefix)
-      var item = g:current_ulti_dict_info[key]
-      var parts = split(item.location, ':')
-      var txt = readfile(parts[0])[str2nr(parts[1]) : str2nr(parts[1]) + 20]
-      var restxt = item.description .. "\n\n"
-      for line in txt
-	if line == "" || line[0 : 6] == "snippet"
-	  break
-	else
-	  restxt = restxt .. line .. "\n"
-	endif
-      endfor
-      items->add({
-	label: key,
-	data: {
-	  entryNames: [key],
-	},
-	kind: 15,
-	documentation: restxt,
-      })
-    endfor
+    CompletionUltiSnips(prefix, items)
+  endif
+
+  if opt.lspOptions.useBufferCompletion
+    CompletionFromBuffer(items)
   endif
 
   var completeItems: list<dict<any>> = []
@@ -170,7 +201,8 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
     var d: dict<any> = {}
 
     # TODO: Add proper support for item.textEdit.newText and item.textEdit.range
-    # Keep in mind that item.textEdit.range can start be way before the typed keyword.
+    # Keep in mind that item.textEdit.range can start be way before the typed
+    # keyword.
     if item->has_key('textEdit') && opt.lspOptions.completionMatcher != 'fuzzy'
       var start_charcol: number
       if prefix != ''
@@ -203,20 +235,21 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
       if prefix != ''
 	# If the completion item text doesn't start with the current (case
 	# ignored) keyword prefix, skip it.
+	var filterText: string = item->get('filterText', d.word)
 	if opt.lspOptions.completionMatcher == 'icase'
-	  if d.word->tolower()->stridx(prefix) != 0
+	  if filterText->tolower()->stridx(prefix) != 0
 	    continue
 	  endif
 	# If the completion item text doesn't fuzzy match with the current
 	# keyword prefix, skip it.
 	elseif opt.lspOptions.completionMatcher == 'fuzzy'
-	  if matchfuzzy([d.word], prefix)->empty()
+	  if matchfuzzy([filterText], prefix)->empty()
 	    continue
 	  endif
 	# If the completion item text doesn't start with the current keyword
 	# prefix, skip it.
 	else
-	  if d.word->stridx(prefix) != 0
+	  if filterText->stridx(prefix) != 0
 	    continue
 	  endif
 	endif
@@ -255,9 +288,21 @@ export def CompletionReply(lspserver: dict<any>, cItems: any)
       endif
     endif
 
+    # Score is used for sorting.
+    d.score = item->get('sortText')
+    if d.score->empty()
+      d.score = item->get('label', '')
+    endif
+
     d.user_data = item
     completeItems->add(d)
   endfor
+
+  if opt.lspOptions.completionMatcher != 'fuzzy'
+    # Lexographical sort (case-insensitive).
+    completeItems->sort((a, b) =>
+      a.score == b.score ? 0 : a.score >? b.score ? 1 : -1)
+  endif
 
   if opt.lspOptions.autoComplete && !lspserver.omniCompletePending
     if completeItems->empty()
@@ -297,7 +342,7 @@ def ShowCompletionDocumentation(cItem: any)
       || cInfo.selected == -1
       || cInfo.items[cInfo.selected]->type() != v:t_dict
       || cInfo.items[cInfo.selected].user_data->type() != v:t_dict
-      || cInfo.items[cInfo.selected].user_data.label !=# cItem.label
+      || cInfo.items[cInfo.selected].user_data.label != cItem.label
     return
   endif
 
@@ -346,7 +391,7 @@ def ShowCompletionDocumentation(cItem: any)
       || cInfo.selected == -1
       || cInfo.items[cInfo.selected]->type() != v:t_dict
       || cInfo.items[cInfo.selected].user_data->type() != v:t_dict
-      || cInfo.items[cInfo.selected].user_data.label !=# cItem.label
+      || cInfo.items[cInfo.selected].user_data.label != cItem.label
     return
   endif
 
