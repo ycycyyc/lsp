@@ -191,6 +191,8 @@ def InitServer(lspserver: dict<any>, bnr: number)
   initparams.capabilities = capabilities.GetClientCaps()
   if !lspserver.initializationOptions->empty()
     initparams.initializationOptions = lspserver.initializationOptions
+  else
+    initparams.initializationOptions = {}
   endif
 
   lspserver.rpcInitializeRequest = initparams
@@ -1456,6 +1458,7 @@ def GetMessages(lspserver: dict<any>): list<string>
   var l = []
   var heading = $"'{lspserver.path}' Language Server Messages"
   var underlines = repeat('=', heading->len())
+  l->extend([heading, underlines])
   l->extend(lspserver.messages)
   return l
 enddef
